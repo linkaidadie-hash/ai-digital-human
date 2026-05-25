@@ -64,10 +64,13 @@ def init_db():
             name TEXT NOT NULL,
             template_id INTEGER,
             script_text TEXT DEFAULT '',
+            voice TEXT DEFAULT '',
             audio_path TEXT DEFAULT '',
             subtitle_path TEXT DEFAULT '',
             output_path TEXT DEFAULT '',
             status TEXT DEFAULT 'draft',
+            progress INTEGER DEFAULT 0,
+            error TEXT DEFAULT '',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (template_id) REFERENCES templates(id)
         )

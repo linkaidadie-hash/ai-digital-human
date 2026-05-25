@@ -82,6 +82,12 @@ async def get_project(project_id: int):
     return dict(row)
 
 
+@router.get("/{project_id}/status")
+async def get_project_status(project_id: int):
+    """Get project status and progress (used by polling)."""
+    return await get_project(project_id)
+
+
 @router.put("/{project_id}")
 async def update_project(project_id: int, project: ProjectCreate):
     """Update an existing project."""

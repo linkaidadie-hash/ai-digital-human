@@ -93,7 +93,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { getTemplates, Template } from '@/api/templates';
 import { getVoices, TTSVoice } from '@/api/tts';
-import { getProjects, createProject, getProjectStatus, Project } from '@/api/render';
+import { getProjects, createProject, getProjectStatus, Project, runPipeline } from '@/api/render';
 import ProgressBar from '@/components/ProgressBar.vue';
 
 const templates = ref<Template[]>([]);
@@ -108,17 +108,22 @@ const generating = ref(false);
 const currentProjectId = ref<number>(0);
 const progress = ref(0);
 const projectStatus = ref<'pending' | 'processing' | 'completed' | 'failed'>('pending');
+const stepText = ref('');  // 当前步骤描述
 const outputPath = ref('');
 const pollInterval = ref<number | null>(null);
+const errorMessage = ref('');
 
 const videoUrl = computed(() => outputPath.value ? `file://${outputPath.value}` : '');
 
 const statusText = computed(() => {
+  if (projectStatus.value === 'failed') {
+    return errorMessage.value || '生成失败';
+  }
+  if (stepText.value) return stepText.value;
   switch (projectStatus.value) {
     case 'pending': return '等待开始...';
     case 'processing': return `处理中... ${progress.value}%`;
     case 'completed': return '生成完成！';
-    case 'failed': return '生成失败';
     default: return '';
   }
 });
@@ -196,19 +201,25 @@ async function startGenerate() {
   projectStatus.value = 'pending';
   progress.value = 0;
   outputPath.value = '';
+  errorMessage.value = '';
+  stepText.value = '正在连接服务器...';
 
   try {
-    const project = await createProject({
+    // Use unified pipeline API
+    stepText.value = '正在生成语音...';
+    const result = await runPipeline({
       templateId: selectedTemplateId.value,
       script: script.value,
       voice: selectedVoice.value
     });
 
-    currentProjectId.value = project.id;
+    currentProjectId.value = result.project_id;
+    stepText.value = '语音生成中...';
     startPolling();
-  } catch (error) {
-    console.error('Create project failed:', error);
+  } catch (error: any) {
+    console.error('Pipeline failed:', error);
     projectStatus.value = 'failed';
+    errorMessage.value = error?.response?.data?.detail || error?.message || '连接服务器失败，请检查后端是否启动';
     generating.value = false;
   }
 }
@@ -220,18 +231,40 @@ function startPolling() {
     try {
       const project = await getProjectStatus(currentProjectId.value);
       projectStatus.value = project.status;
-      progress.value = project.progress;
+      progress.value = project.progress || 0;
+
+      // Update step text based on progress
+      if (project.status === 'pending') {
+        stepText.value = '等待处理...';
+      } else if (project.status === 'processing') {
+        const p = project.progress || 0;
+        if (p < 30) {
+          stepText.value = '正在生成语音...';
+        } else if (p < 60) {
+          stepText.value = '正在生成字幕...';
+        } else if (p < 95) {
+          stepText.value = '正在合成视频...';
+        } else {
+          stepText.value = '处理中...';
+        }
+      }
 
       if (project.status === 'completed') {
         outputPath.value = project.output_path || '';
+        stepText.value = '生成完成！';
         stopPolling();
         generating.value = false;
       } else if (project.status === 'failed') {
+        errorMessage.value = project.error || '视频合成失败';
+        stepText.value = '生成失败';
         stopPolling();
         generating.value = false;
       }
-    } catch (error) {
-      console.error('Poll failed:', error);
+    } catch (error: any) {
+      errorMessage.value = error?.message || '查询失败';
+      projectStatus.value = 'failed';
+      stopPolling();
+      generating.value = false;
     }
   }, 2000);
 }
