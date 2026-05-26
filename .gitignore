@@ -10,3 +10,9 @@ venv/
 *.db
 outputs/
 projects/
+backend/test_*.py
+backend/cleanup_*.py
+backend/smoke_test.py
+backend/startup_check.py
+backend/test_hello.py
+backend/test_log.txt

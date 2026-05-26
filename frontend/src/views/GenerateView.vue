@@ -1,6 +1,19 @@
 <template>
   <div class="generate-view">
     <h2>视频生成</h2>
+
+    <!-- 模板选择区 -->
+    <div class="form-section template-section">
+      <h3>0. 选择模板</h3>
+      <select v-model.number="selectedTemplateId" @change="onTemplateChange" class="template-select">
+        <option :value="0">—— 不使用模板，自定义配置 ——</option>
+        <option v-for="t in templates" :key="t.id" :value="t.id">
+          {{ t.is_default ? '📌 ' : '' }}{{ t.name }}
+        </option>
+      </select>
+      <p class="template-hint" v-if="selectedTemplateId">已加载模板配置，可在此基础上修改</p>
+    </div>
+
     <div class="generate-form">
 
       <!-- 素材选择区 -->
@@ -48,11 +61,11 @@
               <option value="top-right">右上角</option>
               <option value="top-left">左上角</option>
             </select>
-            <select v-model="productScale">
-              <option value="0.15">小 15%</option>
-              <option value="0.25">中 25%</option>
-              <option value="0.35">大 35%</option>
-              <option value="0.50">超大 50%</option>
+            <select v-model.number="productScale">
+              <option :value="0.15">小 15%</option>
+              <option :value="0.25">中 25%</option>
+              <option :value="0.35">大 35%</option>
+              <option :value="0.50">超大 50%</option>
             </select>
           </span>
         </div>
@@ -67,6 +80,7 @@
             </option>
           </select>
           <span v-if="bgmId" class="bgm-vol">
+            <label>BGM音量：</label>
             <input type="range" v-model.number="bgmVolume" min="0" max="1" step="0.05" style="width:80px" />
             {{ Math.round(bgmVolume * 100) }}%
           </span>
@@ -85,9 +99,54 @@
         </select>
       </div>
 
+      <!-- 布局设置 -->
+      <div class="form-section">
+        <h3>3. 布局设置</h3>
+        <div class="layout-grid">
+          <!-- 主视频布局 -->
+          <div class="layout-group">
+            <h4>主视频</h4>
+            <div class="layout-row">
+              <label>缩放：</label>
+              <input type="range" v-model.number="mainVideoScale" min="0.1" max="1.0" step="0.05" />
+              <span class="layout-val">{{ Math.round(mainVideoScale * 100) }}%</span>
+            </div>
+            <div class="layout-row">
+              <label>X偏移：</label>
+              <input type="number" v-model.number="mainVideoX" min="-500" max="500" step="10" />
+              <span class="layout-hint">像素</span>
+            </div>
+            <div class="layout-row">
+              <label>Y偏移：</label>
+              <input type="number" v-model.number="mainVideoY" min="-500" max="500" step="10" />
+              <span class="layout-hint">像素</span>
+            </div>
+          </div>
+          <!-- 输出分辨率 -->
+          <div class="layout-group">
+            <h4>输出分辨率</h4>
+            <div class="resolution-presets">
+              <button v-for="r in resolutionPresets" :key="r.label"
+                :class="{ active: outputWidth === r.w && outputHeight === r.h }"
+                @click="setResolution(r.w, r.h)">
+                {{ r.label }}
+              </button>
+            </div>
+            <div class="layout-row" style="margin-top:8px">
+              <label>宽：</label>
+              <input type="number" v-model.number="outputWidth" min="360" max="4096" step="2" />
+            </div>
+            <div class="layout-row">
+              <label>高：</label>
+              <input type="number" v-model.number="outputHeight" min="360" max="4096" step="2" />
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- 字幕样式 -->
       <div class="form-section">
-        <h3>3. 字幕样式</h3>
+        <h3>4. 字幕样式</h3>
         <div class="subtitle-controls">
           <div class="ctrl-item">
             <label>字号：</label>
@@ -119,7 +178,7 @@
 
       <button class="btn-generate" @click="startGenerate"
         :disabled="!script || generating || (!mainVideoId && !backgroundId)">
-        {{ generating ? '生成中...' : '开始生成' }}
+        {{ generating ? '生成中...' : '🚀 开始生成' }}
       </button>
     </div>
 
@@ -138,8 +197,8 @@
         <video :src="videoUrl" controls autoplay></video>
       </div>
       <div class="result-actions">
-        <button class="btn-primary" @click="openDirectory">打开目录</button>
-        <button class="btn-secondary" @click="downloadVideo">下载视频</button>
+        <button class="btn-primary" @click="openDirectory">📁 打开目录</button>
+        <button class="btn-secondary" @click="downloadVideo">⬇ 下载视频</button>
       </div>
     </div>
 
@@ -162,17 +221,25 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useRoute } from 'vue-router';
 import { getAssets, Asset } from '@/api/assets';
 import { getVoices, TTSVoice } from '@/api/tts';
-import { getProjects, runPipeline, getProjectStatus, Project } from '@/api/render';
+import { getTemplates, Template } from '@/api/templates';
+import { getProjects, runPipeline, getProjectStatus, getProject, Project } from '@/api/render';
 import ProgressBar from '@/components/ProgressBar.vue';
+
+const route = useRoute();
 
 const mainVideos = ref<Asset[]>([]);
 const backgrounds = ref<Asset[]>([]);
 const products = ref<Asset[]>([]);
 const bgms = ref<Asset[]>([]);
 const voices = ref<TTSVoice[]>([]);
+const templates = ref<Template[]>([]);
 const projects = ref<Project[]>([]);
+
+// Template selection
+const selectedTemplateId = ref(0);
 
 // Form state
 const mainVideoId = ref(0);
@@ -181,12 +248,28 @@ const productId = ref(0);
 const bgmId = ref(0);
 const script = ref('');
 const selectedVoice = ref('zh-CN-XiaoxiaoNeural');
+// Subtitle
 const subtitleFontSize = ref(48);
 const subtitlePosition = ref('bottom');
 const subtitleStroke = ref(2);
+// Product
 const productPosition = ref('bottom-right');
 const productScale = ref(0.25);
+// BGM
 const bgmVolume = ref(0.15);
+// Layout
+const mainVideoScale = ref(0.4);
+const mainVideoX = ref(30);
+const mainVideoY = ref(10);
+// Output
+const outputWidth = ref(1080);
+const outputHeight = ref(1920);
+
+const resolutionPresets = [
+  { label: '9:16竖屏', w: 1080, h: 1920 },
+  { label: '16:9横屏', w: 1920, h: 1080 },
+  { label: '1:1方屏', w: 1080, h: 1080 },
+];
 
 // Generation state
 const generating = ref(false);
@@ -199,9 +282,7 @@ const errorMessage = ref('');
 const pollInterval = ref<number | null>(null);
 
 const selectedMainVideo = computed(() => mainVideos.value.find(v => v.id === mainVideoId.value));
-
 const videoUrl = computed(() => outputPath.value ? `file://${outputPath.value}` : '');
-
 const completed = computed(() => projectStatus.value === 'completed');
 
 const statusText = computed(() => {
@@ -220,23 +301,74 @@ function getStatusLabel(s: string) {
 }
 function formatDate(s: string) { return new Date(s).toLocaleString('zh-CN'); }
 function formatDur(s: number) { return `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`; }
+
+function setResolution(w: number, h: number) {
+  outputWidth.value = w;
+  outputHeight.value = h;
+}
+
+function onTemplateChange() {
+  const id = selectedTemplateId.value;
+  if (!id) {
+    // Reset to defaults
+    return;
+  }
+  const t = templates.value.find(t => t.id === id);
+  if (!t) return;
+
+  // Apply template asset IDs
+  mainVideoId.value = t.main_video_asset_id || 0;
+  backgroundId.value = t.background_asset_id || 0;
+  productId.value = t.product_asset_id || 0;
+  bgmId.value = t.bgm_asset_id || 0;
+
+  // Apply subtitle style
+  const sub = t.subtitle_style_json || {};
+  if (sub.fontSize !== undefined) subtitleFontSize.value = Number(sub.fontSize);
+  if (sub.position !== undefined) subtitlePosition.value = sub.position;
+  if (sub.stroke !== undefined) subtitleStroke.value = Number(sub.stroke);
+
+  // Apply layout
+  const layout = t.layout_json || {};
+  if (layout.mainVideoScale !== undefined) mainVideoScale.value = Number(layout.mainVideoScale);
+  if (layout.mainVideoX !== undefined) mainVideoX.value = Number(layout.mainVideoX);
+  if (layout.mainVideoY !== undefined) mainVideoY.value = Number(layout.mainVideoY);
+
+  // Apply volume
+  if (t.bgm_volume !== undefined) bgmVolume.value = Number(t.bgm_volume);
+
+  // Apply product
+  if (t.product_scale !== undefined) productScale.value = Number(t.product_scale);
+  if (t.product_position !== undefined) productPosition.value = t.product_position;
+
+  // Apply output resolution
+  if (t.output_width) outputWidth.value = t.output_width;
+  if (t.output_height) outputHeight.value = t.output_height;
+}
+
 function loadProject(p: Project) {
   script.value = p.script_text || '';
   selectedVoice.value = p.voice || 'zh-CN-XiaoxiaoNeural';
 }
 
+function onMainVideoChange() {
+  // nothing extra needed — v-model already updates mainVideoId
+}
+
 async function loadAllAssets() {
   try {
-    const [av, ab, ap, abgm] = await Promise.all([
+    const [av, ab, ap, abgm, tdata] = await Promise.all([
       getAssets({ type: 'character_video', pageSize: 100 }),
       getAssets({ type: 'background', pageSize: 100 }),
       getAssets({ type: 'product', pageSize: 100 }),
       getAssets({ type: 'bgm', pageSize: 100 }),
+      getTemplates(),
     ]);
     mainVideos.value = av.assets;
     backgrounds.value = ab.assets;
     products.value = ap.assets;
     bgms.value = abgm.assets;
+    templates.value = tdata.templates || [];
   } catch (e) { console.error('Load assets failed:', e); }
 }
 
@@ -257,13 +389,6 @@ async function loadProjects() {
   try { projects.value = await getProjects(); } catch {}
 }
 
-function onMainVideoChange() {
-  const v = selectedMainVideo.value;
-  if (v) {
-    mainVideoId.value = v.id;
-  }
-}
-
 async function startGenerate() {
   if (!script.value) return;
   generating.value = true;
@@ -275,7 +400,7 @@ async function startGenerate() {
 
   try {
     const res = await runPipeline({
-      templateId: null,
+      templateId: selectedTemplateId.value || null,
       script: script.value,
       voice: selectedVoice.value,
       mainVideoAssetId: mainVideoId.value || null,
@@ -288,13 +413,18 @@ async function startGenerate() {
       bgmVolume: bgmVolume.value,
       productPosition: productPosition.value,
       productScale: productScale.value,
+      mainVideoScale: mainVideoScale.value,
+      mainVideoX: mainVideoX.value,
+      mainVideoY: mainVideoY.value,
+      outputWidth: outputWidth.value,
+      outputHeight: outputHeight.value,
     });
     currentProjectId.value = res.project_id;
     stepText.value = '语音生成中...';
     startPolling();
   } catch (err: any) {
     projectStatus.value = 'failed';
-    errorMessage.value = err?.response?.data?.detail || err?.message || '连接服务器失败';
+    errorMessage.value = err?.response?.data?.detail || err?.message || '连接服务器失败，请检查后端是否启动';
     generating.value = false;
   }
 }
@@ -338,7 +468,18 @@ function openDirectory() {
 }
 function downloadVideo() { console.log('Download:', outputPath.value); }
 
-onMounted(() => { loadAllAssets(); loadVoices(); loadProjects(); });
+// Load project from URL query param
+async function initFromQuery() {
+  const projectId = route.query.project;
+  if (projectId) {
+    try {
+      const p = await getProject(Number(projectId));
+      loadProject(p);
+    } catch {}
+  }
+}
+
+onMounted(() => { loadAllAssets(); loadVoices(); loadProjects(); initFromQuery(); });
 onUnmounted(() => { stopPolling(); });
 </script>
 
@@ -349,6 +490,11 @@ h2 { font-size: 24px; color: #1a1a2e; margin-bottom: 24px; }
 .form-section { margin-bottom: 24px; }
 .form-section h3 { font-size: 16px; color: #333; margin-bottom: 12px; border-left: 4px solid #667eea; padding-left: 8px; }
 
+/* Template section */
+.template-section { background: #f8f9ff; border-radius: 10px; padding: 16px; margin-bottom: 20px; border: 1px solid #e0e4ff; }
+.template-select { width: 100%; padding: 10px 12px; border: 1px solid #c5cae9; border-radius: 8px; font-size: 14px; background: white; }
+.template-hint { font-size: 12px; color: #667eea; margin-top: 6px; }
+
 .asset-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .asset-row label { width: 70px; font-size: 14px; color: #666; flex-shrink: 0; }
 .asset-row select { flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
@@ -356,9 +502,23 @@ h2 { font-size: 24px; color: #1a1a2e; margin-bottom: 24px; }
 .product-controls { display: flex; gap: 6px; }
 .product-controls select { padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; }
 .bgm-vol { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #666; }
+.bgm-vol label { width: auto; font-size: 12px; }
 
 .form-section textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; resize: vertical; font-family: inherit; margin-bottom: 10px; }
 .voice-select { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
+
+/* Layout */
+.layout-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.layout-group { background: #f8f9fa; border-radius: 8px; padding: 12px; }
+.layout-group h4 { font-size: 13px; color: #555; margin-bottom: 10px; font-weight: 500; }
+.layout-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.layout-row label { font-size: 12px; color: #666; width: 50px; flex-shrink: 0; }
+.layout-row input[type="range"] { flex: 1; }
+.layout-row input[type="number"] { width: 70px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+.layout-val, .layout-hint { font-size: 12px; color: #888; width: 40px; text-align: right; }
+.resolution-presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.resolution-presets button { padding: 4px 10px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.resolution-presets button.active { background: #667eea; color: white; border-color: #667eea; }
 
 .subtitle-controls { display: flex; gap: 16px; flex-wrap: wrap; }
 .ctrl-item { display: flex; align-items: center; gap: 8px; }
