@@ -114,6 +114,9 @@ def init_db():
     """)
 
     for col, coltype, default in [
+        ("error", "TEXT", "''"),
+        ("voice", "TEXT", "''"),
+        ("progress", "INTEGER", "0"),
         ("main_video_asset_id", "INTEGER", "NULL"),
         ("background_asset_id", "INTEGER", "NULL"),
         ("product_asset_id", "INTEGER", "NULL"),

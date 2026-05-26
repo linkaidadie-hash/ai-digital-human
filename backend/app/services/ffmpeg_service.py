@@ -25,6 +25,13 @@ def log(msg: str):
     line = f"[{ts}] [FFmpeg] {msg}"
     print(line)
     _log_lines.append(line)
+    # Also append to pipeline debug log so we can read it from outside
+    try:
+        debug_log = os.path.join(str(BASE_DIR), "outputs", "pipeline_debug.log")
+        with open(debug_log, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass
 
 def get_log() -> str:
     return "\n".join(_log_lines)
@@ -323,9 +330,8 @@ def burn_subtitles(input_path: str, subtitle_path: str,
                   position: str = "bottom",
                   stroke: int = 2) -> str:
     """
-    Burn SRT subtitles into video with styling.
-    position: 'bottom' | 'middle' | 'top'
-    stroke: outline width in pixels
+    Burn SRT subtitles into video.
+    Uses relative paths to avoid FFmpeg filter-parser bugs with Windows C: colons.
     """
     ffmpeg = get_ffmpeg_path()
 
@@ -337,25 +343,28 @@ def burn_subtitles(input_path: str, subtitle_path: str,
     else:  # bottom
         y_pos = "H-text_h-30"
 
-    # Stroke/outline: draw text twice (outline + fill)
-    # We use FFmpeg's drawtext with stroke
-    filter_str = (
-        f"subtitles='{subtitle_path}':force_style="
-        f"'FontSize={font_size},PrimaryColour=&HFFFFFF&,"
-        f"BorderStyle=1,Outline={stroke},OutlineColour=&H000000&,"
-        f"MarginL=20,MarginR=20,Y={y_pos}'"
-    )
+    # Use relative paths with forward slashes — avoids the FFmpeg filter graph
+    # parser treating `C:` as a colon-separated option, which corrupts the path.
+    # Paths are relative to BASE_DIR (backend root) where the Python process runs.
+    backend_root = Path(__file__).resolve().parent.parent.parent  # backend root
+    sub_rel = Path(subtitle_path).relative_to(backend_root).as_posix()
+    input_rel = Path(input_path).relative_to(backend_root).as_posix()
+    output_rel = Path(output_path).relative_to(backend_root).as_posix()
+
+    filter_str = f"subtitles={sub_rel}"
 
     cmd = [
-        ffmpeg, "-y", "-i", input_path,
+        ffmpeg, "-y", "-i", input_rel,
         "-vf", filter_str,
         "-c:v", "libx264", "-preset", "fast", "-crf", "23",
         "-c:a", "copy",
-        output_path
+        output_rel
     ]
     rc, _, stderr = run_ffmpeg(cmd, timeout=180)
-    if rc == 0 and os.path.exists(output_path):
-        return output_path
+    # Verify: check that output file exists in absolute form
+    abs_out = backend_root / output_rel
+    if rc == 0 and os.path.exists(abs_out):
+        return str(abs_out)
     log(f"Subtitle burn failed: {stderr}")
     return input_path
 

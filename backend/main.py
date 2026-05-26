@@ -18,6 +18,14 @@ app = FastAPI(
     version="1.1.0"
 )
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    import traceback
+    tb = traceback.format_exc()
+    print("[EXCEPTION]", type(exc).__name__, str(exc))
+    print("[TRACE]", tb[:500])
+    return {"error": type(exc).__name__, "detail": str(exc)}
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -79,7 +87,14 @@ def check_output_dir() -> dict:
 @app.on_event("startup")
 async def startup_event():
     init_db()
-    print("[API] AI Digital Human V1.1 started")
+    import os
+    # Ensure outputs dir exists (both in dev and packaged paths)
+    out_dir = BASE_DIR / "outputs"
+    os.makedirs(out_dir, exist_ok=True)
+    db_dir = BASE_DIR
+    os.makedirs(db_dir, exist_ok=True)
+    is_packaged = os.path.exists(os.path.join(os.path.dirname(__file__), "..", "resources"))
+    print("[API] AI Digital Human V1.1 started (packaged=" + ("yes" if is_packaged else "no") + ")")
     # Run startup health check
     checks = {
         "python": {"status": "ok"},
@@ -97,6 +112,11 @@ async def startup_event():
 @app.get("/")
 async def root():
     return {"service": "AI Digital Human API", "version": "1.1.0"}
+
+
+@app.get("/ping")
+async def ping():
+    return {"ok": True, "service": "fastapi-backend"}
 
 
 @app.get("/health")

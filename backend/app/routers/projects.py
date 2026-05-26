@@ -71,7 +71,9 @@ async def get_project(project_id: int):
     conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="项目不存在")
-    return dict(row)
+    result = dict(row)
+    print(f"[Projects] GET /{project_id} -> status={result.get('status')} progress={result.get('progress')}")
+    return result
 
 
 @router.get("/{project_id}/status")

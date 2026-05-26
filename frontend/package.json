@@ -30,7 +30,7 @@
     "appId": "com.aidigitalhuman.app",
     "productName": "AI Digital Human",
     "directories": {
-      "output": "dist-electron"
+      "output": "D:\\ai-digital-human-build\\dist-electron"
     },
     "files": [
       "dist/**/*",

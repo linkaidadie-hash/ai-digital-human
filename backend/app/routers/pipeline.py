@@ -5,12 +5,38 @@ Loads full config from template + script + layout parameters.
 import os
 import time
 import json
+import subprocess
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from typing import Optional
+import json
+
 from app.database import get_db_connection
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
+
+
+class PipelineRequest(BaseModel):
+    script: str
+    voice: str = "zh-CN-XiaoxiaoNeural"
+    template_id: Optional[int] = None
+    main_video_asset_id: Optional[int] = None
+    background_asset_id: Optional[int] = None
+    product_asset_id: Optional[int] = None
+    bgm_asset_id: Optional[int] = None
+    main_video_scale: float = 0.4
+    product_scale: float = 0.25
+    product_position: str = "bottom-right"
+    bgm_volume: float = 0.15
+    subtitle_font_size: int = 48
+    subtitle_position: str = "bottom"
+    subtitle_stroke: int = 2
+    main_video_x: int = 30
+    main_video_y: int = 10
+    output_width: int = 1080
+    output_height: int = 1920
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -20,11 +46,21 @@ def update_project(project_id: int, **kwargs):
         conn = get_db_connection()
         cursor = conn.cursor()
         for key, value in kwargs.items():
-            cursor.execute(f"UPDATE projects SET {key} = ? WHERE id = ?", (str(value), project_id))
+            val_str = "NULL" if value is None else str(value)
+            cursor.execute(f"UPDATE projects SET {key} = ? WHERE id = ?", (val_str, project_id))
         conn.commit()
+        # Verify the update worked
+        cursor.execute("SELECT id, status, progress, output_path FROM projects WHERE id = ?", (project_id,))
+        row = cursor.fetchone()
         conn.close()
+        if not row:
+            print(f"[Pipeline] update_project({project_id}): row not found!")
+        else:
+            if kwargs.get("status"):
+                print(f"[Pipeline] DB update: id={project_id} status={row['status']} progress={row['progress']}")
     except Exception as e:
         print(f"[Pipeline] update_project error: {e}")
+        import traceback; traceback.print_exc()
 
 
 def _get_template(template_id: int) -> dict:
@@ -152,99 +188,106 @@ def run_pipeline_bg(
         update_project(project_id, status="failed", error=str(e), progress=0)
 
 
+async def _run_pipeline_bg_async(*args):
+    """Async wrapper — runs the sync pipeline function in a thread pool."""
+    import asyncio, concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        f = pool.submit(run_pipeline_bg, *args)
+        try:
+            f.result(timeout=600)
+        except Exception as e:
+            print(f"[Pipeline] background task error: {e}")
+
+
 @router.post("/run")
 async def run_pipeline(
-    background_tasks: BackgroundTasks,
-    template_id: int = None,
-    script: str = "",
-    voice: str = "zh-CN-XiaoxiaoNeural",
-    # All V1.3 params (from template or override)
-    main_video_asset_id: int = None,
-    background_asset_id: int = None,
-    product_asset_id: int = None,
-    bgm_asset_id: int = None,
-    # Layout & style
-    main_video_scale: float = 0.4,
-    product_scale: float = 0.25,
-    product_position: str = "bottom-right",
-    bgm_volume: float = 0.15,
-    subtitle_font_size: int = 48,
-    subtitle_position: str = "bottom",
-    subtitle_stroke: int = 2,
-    main_video_x: int = 30,
-    main_video_y: int = 10,
-    output_width: int = 1080,
-    output_height: int = 1920,
+    body: PipelineRequest,
 ):
     """Run full pipeline. Loads template defaults, then applies overrides."""
-    if not script or not script.strip():
+    if not body.script or not body.script.strip():
         raise HTTPException(status_code=400, detail="文案不能为空")
 
     # Load template to fill in missing params
     tmpl = {}
-    if template_id:
-        tmpl = _get_template(template_id)
+    if body.template_id:
+        tmpl = _get_template(body.template_id)
 
-    # Apply template defaults for any param not explicitly provided
-    def v(val, default):
-        return val if val is not None else default
-
-    # Resolve asset IDs (override wins)
-    mv_id = main_video_asset_id if main_video_asset_id else tmpl.get("main_video_asset_id")
-    bg_id = background_asset_id if background_asset_id else tmpl.get("background_asset_id")
-    prod_id = product_asset_id if product_asset_id else tmpl.get("product_asset_id")
-    bgm_id = bgm_asset_id if bgm_asset_id else tmpl.get("bgm_asset_id")
+    mv_id = body.main_video_asset_id if body.main_video_asset_id else tmpl.get("main_video_asset_id")
+    bg_id = body.background_asset_id if body.background_asset_id else tmpl.get("background_asset_id")
+    prod_id = body.product_asset_id if body.product_asset_id else tmpl.get("product_asset_id")
+    bgm_id = body.bgm_asset_id if body.bgm_asset_id else tmpl.get("bgm_asset_id")
 
     # Layout
     layout = tmpl.get("layout_json") or {}
     subtitle_style = tmpl.get("subtitle_style_json") or {}
 
     # Scale & position
-    mv_scale = main_video_scale if main_video_scale != 0.4 else tmpl.get("main_video_scale", 0.4)
-    prod_scale = product_scale if product_scale != 0.25 else tmpl.get("product_scale", 0.25)
-    prod_pos = product_position if product_position != "bottom-right" else tmpl.get("product_position", "bottom-right")
-    bvol = bgm_volume if bgm_volume != 0.15 else tmpl.get("bgm_volume", 0.15)
+    mv_scale = body.main_video_scale if body.main_video_scale != 0.4 else tmpl.get("main_video_scale", 0.4)
+    prod_scale = body.product_scale if body.product_scale != 0.25 else tmpl.get("product_scale", 0.25)
+    prod_pos = body.product_position if body.product_position != "bottom-right" else tmpl.get("product_position", "bottom-right")
+    bvol = body.bgm_volume if body.bgm_volume != 0.15 else tmpl.get("bgm_volume", 0.15)
 
-    sub_fs = subtitle_font_size if subtitle_font_size != 48 else subtitle_style.get("fontSize", 48)
-    sub_pos = subtitle_position if subtitle_position != "bottom" else subtitle_style.get("position", "bottom")
-    sub_st = subtitle_stroke if subtitle_stroke != 2 else subtitle_style.get("stroke", 2)
+    sub_fs = body.subtitle_font_size if body.subtitle_font_size != 48 else subtitle_style.get("fontSize", 48)
+    sub_pos = body.subtitle_position if body.subtitle_position != "bottom" else subtitle_style.get("position", "bottom")
+    sub_st = body.subtitle_stroke if body.subtitle_stroke != 2 else subtitle_style.get("stroke", 2)
 
-    mv_x = main_video_x if main_video_x != 30 else layout.get("mainVideoX", 30)
-    mv_y = main_video_y if main_video_y != 10 else layout.get("mainVideoY", 10)
+    mv_x = body.main_video_x if body.main_video_x != 30 else layout.get("mainVideoX", 30)
+    mv_y = body.main_video_y if body.main_video_y != 10 else layout.get("mainVideoY", 10)
 
-    out_w = output_width or tmpl.get("output_width", 1080)
-    out_h = output_height or tmpl.get("output_height", 1920)
+    out_w = body.output_width or tmpl.get("output_width", 1080)
+    out_h = body.output_height or tmpl.get("output_height", 1920)
 
-    # Create project
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """INSERT INTO projects
-           (name, template_id, script_text, voice, status, progress,
-            main_video_asset_id, background_asset_id, product_asset_id, bgm_asset_id,
-            subtitle_style_json)
-           VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?, ?)""",
-        (f"视频_{int(time.time())}", template_id, script, voice,
-         mv_id, bg_id, prod_id, bgm_id,
-         json.dumps(subtitle_style, ensure_ascii=False))
-    )
-    project_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
+# Create project with status=pending
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """INSERT INTO projects
+               (name, template_id, script_text, voice, status, progress,
+                main_video_asset_id, background_asset_id, product_asset_id, bgm_asset_id,
+                subtitle_style_json)
+               VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?, ?)""",
+            (f"视频_{int(time.time())}", body.template_id, body.script, body.voice,
+             mv_id, bg_id, prod_id, bgm_id,
+             json.dumps(subtitle_style, ensure_ascii=False))
+        )
+        project_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+    except Exception as dbg:
+        import traceback
+        print("[DEBUG] DB error: " + traceback.format_exc())
+        raise
 
-    background_tasks.add_task(
-        run_pipeline_bg,
-        project_id, script, voice, template_id,
-        mv_id, bg_id, prod_id, bgm_id,
-        mv_scale, prod_scale, prod_pos, bvol,
-        sub_fs, sub_pos, sub_st,
-        mv_x, mv_y, out_w, out_h,
-    )
+    # Build worker args and spawn
+    worker_script = os.path.join(BASE_DIR, "render_worker.py")
+    args = [
+        "py", "-u", worker_script,
+        str(project_id),
+        body.script,
+        body.voice,
+        str(mv_id if mv_id else 0),
+        str(bg_id if bg_id else 0),
+        str(prod_id if prod_id else 0),
+        str(bgm_id if bgm_id else "None"),
+        str(mv_scale),
+        str(prod_scale),
+        prod_pos,
+        str(bvol),
+        str(sub_fs),
+        sub_pos,
+        str(sub_st),
+        str(mv_x),
+        str(mv_y),
+        str(out_w),
+        str(out_h),
+    ]
+    subprocess.Popen(args, cwd=BASE_DIR)
 
     return {
         "success": True,
         "project_id": project_id,
-        "message": "Pipeline started. Poll GET /api/pipeline/status/{project_id} for progress."
+        "status": "pending",
     }
 
 
