@@ -10,18 +10,16 @@ DATABASE_PATH = BASE_DIR / "database.db"
 
 
 def get_db_connection():
-    """Get database connection with row factory enabled."""
     conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db():
-    """Initialize database and create tables if they don't exist."""
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Assets table
+    # Assets table (V1.2: + fps, codec, has_audio, file_size)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS assets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,9 +30,31 @@ def init_db():
             duration REAL DEFAULT 0.0,
             width INTEGER DEFAULT 0,
             height INTEGER DEFAULT 0,
+            fps REAL DEFAULT 0.0,
+            codec TEXT DEFAULT '',
+            has_audio INTEGER DEFAULT 0,
+            file_size INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # Add new columns if they don't exist (migration for existing DB)
+    try:
+        cursor.execute("ALTER TABLE assets ADD COLUMN fps REAL DEFAULT 0.0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE assets ADD COLUMN codec TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE assets ADD COLUMN has_audio INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE assets ADD COLUMN file_size INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
 
     # Templates table
     cursor.execute("""
@@ -57,7 +77,7 @@ def init_db():
         )
     """)
 
-    # Projects table
+    # Projects table (V1.2: + bgm_asset_id, product_asset_id, subtitle_style)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,10 +91,28 @@ def init_db():
             status TEXT DEFAULT 'draft',
             progress INTEGER DEFAULT 0,
             error TEXT DEFAULT '',
+            main_video_asset_id INTEGER,
+            background_asset_id INTEGER,
+            product_asset_id INTEGER,
+            bgm_asset_id INTEGER,
+            subtitle_style_json TEXT DEFAULT '{}',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (template_id) REFERENCES templates(id)
         )
     """)
+
+    # Migrate existing projects table
+    for col, coltype in [
+        ("main_video_asset_id", "INTEGER"),
+        ("background_asset_id", "INTEGER"),
+        ("product_asset_id", "INTEGER"),
+        ("bgm_asset_id", "INTEGER"),
+        ("subtitle_style_json", "TEXT DEFAULT '{}'"),
+    ]:
+        try:
+            cursor.execute(f"ALTER TABLE projects ADD COLUMN {col} {coltype}")
+        except sqlite3.OperationalError:
+            pass
 
     # Settings table
     cursor.execute("""
@@ -90,7 +128,6 @@ def init_db():
 
 
 def get_setting(key: str, default: str = None) -> str:
-    """Get a setting value from the database."""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
@@ -100,12 +137,8 @@ def get_setting(key: str, default: str = None) -> str:
 
 
 def set_setting(key: str, value: str) -> None:
-    """Set a setting value in the database."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-        (key, value)
-    )
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
     conn.commit()
     conn.close()

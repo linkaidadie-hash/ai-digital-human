@@ -3,12 +3,17 @@ import api from './index';
 export interface Asset {
   id: number;
   name: string;
-  type: 'character_video' | 'action_video' | 'background_image' | 'background_video' | 'product_image' | 'product_video' | 'bgm' | 'sound_effect' | 'font';
+  type: string;
   path: string;
   tags: string;
   duration: number;
   width: number;
   height: number;
+  fps?: number;
+  codec?: string;
+  has_audio?: boolean;
+  format?: string;
+  file_size_kb?: number;
   created_at: string;
 }
 
@@ -19,9 +24,13 @@ export interface UploadResponse {
   duration: number;
   width: number;
   height: number;
+  fps: number;
+  codec: string;
+  has_audio: boolean;
+  format: string;
+  file_size_kb: number;
 }
 
-// 获取素材列表
 export async function getAssets(params?: {
   type?: string;
   page?: number;
@@ -30,24 +39,20 @@ export async function getAssets(params?: {
   return api.get('/assets', { params });
 }
 
-// 上传素材
-export async function uploadAsset(file: File, type: string, name: string, tags?: string): Promise<UploadResponse> {
+export async function uploadAsset(file: File, type: string, tags?: string): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append('file', file);
-  formData.append('type', type);
-  formData.append('name', name);
-  if (tags) {
-    formData.append('tags', tags);
-  }
-
+  formData.append('asset_type', type);
+  if (tags) formData.append('tags', tags);
   return api.post('/assets/import', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
+    headers: { 'Content-Type': 'multipart/form-data' }
   });
 }
 
-// 删除素材
+export async function getAsset(id: number): Promise<Asset> {
+  return api.get(`/assets/${id}`);
+}
+
 export async function deleteAsset(id: number): Promise<void> {
   return api.delete(`/assets/${id}`);
 }

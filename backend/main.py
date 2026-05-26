@@ -1,5 +1,5 @@
 """
-AI Digital Human - FastAPI Backend Entry Point (V1.1)
+AI Digital Human - FastAPI Backend Entry Point (V1.2)
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
