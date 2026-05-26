@@ -22,8 +22,13 @@ export async function updateSettings(data: Partial<Settings>): Promise<{ success
   return api.post('/settings', data);
 }
 
-export async function getSystemStatus(): Promise<SettingsStatus> {
-  return api.get('/status');
+export async function getSystemStatus(): Promise<any> {
+  const raw = await api.get('/health');
+  // Normalize to what SettingsView expects: { ffmpeg: {...}, edge_tts: {...} }
+  return {
+    ffmpeg: raw.checks?.ffmpeg || { status: 'unknown' },
+    edge_tts: raw.checks?.edge_tts || { status: 'unknown' },
+  };
 }
 
 export async function detectFFmpeg(): Promise<{ ffmpeg: { status: string; path?: string } }> {
