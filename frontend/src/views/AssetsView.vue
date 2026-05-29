@@ -11,9 +11,13 @@
         <select v-model="selectedType" @change="loadAssets">
           <option value="">全部</option>
           <option value="character_video">角色视频</option>
+          <option value="character_image">角色图片</option>
           <option value="action_video">动作视频</option>
-          <option value="background">背景</option>
-          <option value="product">商品图</option>
+          <option value="image">图片</option>
+          <option value="background_image">背景图</option>
+          <option value="background_video">背景视频</option>
+          <option value="product_image">商品图</option>
+          <option value="product_video">商品视频</option>
           <option value="bgm">BGM</option>
           <option value="font">字体</option>
         </select>
@@ -62,10 +66,14 @@
         <div class="form-group">
           <label>素材类型：</label>
           <select v-model="importType">
+            <option value="image">图片</option>
             <option value="character_video">角色视频</option>
+            <option value="character_image">角色图片</option>
             <option value="action_video">动作视频</option>
-            <option value="background">背景图/背景视频</option>
-            <option value="product">商品图</option>
+            <option value="background_image">背景图</option>
+            <option value="background_video">背景视频</option>
+            <option value="product_image">商品图</option>
+            <option value="product_video">商品视频</option>
             <option value="bgm">BGM</option>
             <option value="font">字体</option>
           </select>
@@ -74,7 +82,7 @@
           @dragover.prevent="isDragOver = true" @dragleave="isDragOver = false" @drop.prevent="onDrop">
           <input type="file" ref="fileInput" @change="onFileSelect" :accept="getAcceptTypes()" style="display:none" />
           <div v-if="!selectedFile">
-            <p>支持：mp4 / mov / webm / jpg / png / mp3 / wav</p>
+            <p>支持：mp4 / mov / webm / jpg / png / webp / mp3 / wav</p>
             <p>拖拽文件到此处或点击选择</p>
           </div>
           <div v-else>已选择: {{ selectedFile.name }}</div>
@@ -132,10 +140,14 @@ function closeDialog() { showDialog.value = false; }
 
 function getAcceptTypes() {
   const types: Record<string, string> = {
+    image: 'image/jpeg,image/png,image/webp',
     character_video: 'video/mp4,video/quicktime,video/webm',
+    character_image: 'image/jpeg,image/png,image/webp',
     action_video: 'video/mp4,video/quicktime,video/webm',
-    background: 'image/jpeg,image/png,video/mp4,video/quicktime,video/webm',
-    product: 'image/jpeg,image/png',
+    background_image: 'image/jpeg,image/png,image/webp',
+    background_video: 'video/mp4,video/quicktime,video/webm',
+    product_image: 'image/jpeg,image/png,image/webp',
+    product_video: 'video/mp4,video/quicktime,video/webm',
     bgm: 'audio/mpeg,audio/wav',
     font: '.ttf,.otf,.woff,.woff2'
   };
@@ -174,8 +186,8 @@ async function handleDelete(asset: Asset) {
 function handlePreview(asset: Asset) { previewAsset.value = asset; }
 function closePreview() { previewAsset.value = null; }
 
-function isVideoType(type: string) { return ['character_video','action_video','background'].includes(type) && !isImageType(type); }
-function isImageType(type: string) { return ['background','product'].includes(type); }
+function isVideoType(type: string) { return ['character_video','action_video','background_video','product_video'].includes(type); }
+function isImageType(type: string) { return ['image','background_image','product_image','character_image'].includes(type); }
 function isAudioType(type: string) { return ['bgm'].includes(type); }
 function formatDuration(s: number) { return `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`; }
 

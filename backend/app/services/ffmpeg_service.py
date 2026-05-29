@@ -223,6 +223,31 @@ def preprocess_audio(input_path: str) -> str:
     return out_path if rc == 0 else input_path
 
 
+def preprocess_character_image(input_path: str, target_width: int = 1080, target_height: int = 1920) -> str:
+    """
+    Convert character image to a 1-frame video, same as background images.
+    Will be looped to full duration by loop_or_trim in render_video_v12.
+    """
+    log(f"Preprocessing character image: {input_path}")
+    out_path = str(OUTPUT_DIR / f"char_{int(time.time() * 1000)}.mp4")
+    ffmpeg = get_ffmpeg_path()
+    cmd = [
+        ffmpeg, "-y",
+        "-loop", "1", "-i", input_path,
+        "-t", "1",  # single frame, looped by loop_or_trim to full duration
+        "-vf", f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,"
+               f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:color=black",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+        "-r", "30", "-pix_fmt", "yuv420p",
+        out_path
+    ]
+    rc, _, stderr = run_ffmpeg(cmd, timeout=60)
+    if rc == 0 and os.path.exists(out_path):
+        return out_path
+    log(f"Character image preprocess failed: {stderr}")
+    return input_path
+
+
 def preprocess_image(input_path: str, target_width: int = 1080, target_height: int = 1920) -> str:
     """
     Convert image to fit within target dimensions, pad to exact size.
@@ -386,6 +411,7 @@ def render_video_v12(
     subtitle_font_size: int = 48,
     subtitle_position: str = "bottom",
     subtitle_stroke: int = 2,
+    character_image_path: str = None,  # character image — rendered as main video
     output_width: int = 1080,
     output_height: int = 1920,
     timeout: int = 180,
@@ -439,8 +465,15 @@ def render_video_v12(
             mv_looped = None
             log("  No main video, will use black background only")
 
+        # ── 2b. Character image (used as main video when no main_video) ────
+        char_img_video = None
+        if not mv_looped and character_image_path and os.path.exists(character_image_path):
+            char_img_raw = add_temp(preprocess_character_image(character_image_path, output_width, output_height))
+            char_img_video = add_temp(loop_or_trim(char_img_raw, target_duration, output_dir))
+            log(f"  Character image looped to {target_duration:.1f}s: {char_img_video}")
+
         # ── 3. Determine base layers ──────────────────────────────────────
-        base_video = mv_looped if mv_looped else bg_video
+        base_video = mv_looped if mv_looped else (char_img_video if char_img_video else bg_video)
         if not base_video:
             # Pure black fallback
             black_path = os.path.join(output_dir, f"black_{int(time.time()*1000)}.mp4")

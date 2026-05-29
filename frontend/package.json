@@ -55,6 +55,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    }
+    },
+    "publish": null
   }
 }

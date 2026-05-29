@@ -30,6 +30,7 @@ export interface PipelineRunRequest {
   backgroundAssetId?: number | null;
   productAssetId?: number | null;
   bgmAssetId?: number | null;
+  characterImageAssetId?: number | null;
   mainVideoScale?: number;
   productScale?: number;
   productPosition?: string;

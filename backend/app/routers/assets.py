@@ -9,15 +9,19 @@ from pathlib import Path
 
 from app.database import get_db_connection
 from app.models import AssetCreate, AssetResponse
-from app.services.ffmpeg_service import detect_media, validate_format, preprocess_video, preprocess_audio, log as ffmpeg_log
+from app.services.ffmpeg_service import detect_media, validate_format, preprocess_video, preprocess_audio
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
 ASSET_DIRS = {
+    "image": "images",
     "character_video": "character_videos",
+    "character_image": "character_images",
     "action_video": "action_videos",
-    "background": "backgrounds",
-    "product": "products",
+    "background_image": "backgrounds",
+    "background_video": "backgrounds",
+    "product_image": "products",
+    "product_video": "products",
     "bgm": "bgm",
     "font": "fonts"
 }
@@ -32,14 +36,6 @@ async def import_asset(
     asset_type: str = "character_video",
     tags: str = ""
 ):
-    """
-    Import a media asset:
-    1. Validate format (reject unsupported extensions with friendly message)
-    2. Copy to assets directory
-    3. Detect media info (duration, resolution, fps, codec, has_audio)
-    4. Auto-preprocess video/audio to standard format
-    5. Save to database
-    """
     if asset_type not in ASSET_DIRS:
         raise HTTPException(status_code=400, detail=f"无效的素材类型：{asset_type}")
 
@@ -48,8 +44,7 @@ async def import_asset(
 
     if ext not in SUPPORTED_EXTS:
         supported = sorted(set(e for e in SUPPORTED_EXTS if e != ".webp"))
-        msg = f"不支持的文件格式「{ext}」，支持：{', '.join(supported)}"
-        raise HTTPException(status_code=400, detail=msg)
+        raise HTTPException(status_code=400, detail=f"不支持的文件格式「{ext}」，支持：{', '.join(supported)}")
 
     backend_dir = Path(__file__).resolve().parent.parent.parent
     target_dir = backend_dir / "assets" / ASSET_DIRS[asset_type]
@@ -61,18 +56,39 @@ async def import_asset(
     unique_name = f"{name}_{int(time.time() * 1000)}{ext}"
     target_path = target_dir / unique_name
 
-    # Read + write
-    try:
-        content = await file.read()
-        with open(target_path, "wb") as f:
-            f.write(content)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"保存文件失败：{str(e)}")
+    content = await file.read()
+    with open(target_path, "wb") as f:
+        f.write(content)
 
-    # Detect media info
+    # 图片类：纯保存，不走 detect_media / preprocess / FFmpeg / PIL
+    if asset_type in ("image", "character_image", "background_image", "product_image"):
+        file_size = os.path.getsize(target_path)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO assets (name, type, path, tags, duration, width, height) VALUES (?, ?, ?, ?, 0, 0, 0)",
+            (name, asset_type, str(target_path), tags)
+        )
+        asset_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return {
+            "success": True,
+            "asset_id": asset_id,
+            "path": str(target_path),
+            "duration": 0,
+            "width": 0,
+            "height": 0,
+            "fps": 0,
+            "codec": "",
+            "has_audio": False,
+            "format": ext.lstrip("."),
+            "file_size_kb": round(file_size / 1024, 1),
+        }
+
+    # 其他类型保持原有逻辑
     media_info = detect_media(str(target_path))
 
-    # Auto-preprocess
     is_video = ext in (".mp4", ".mov", ".webm")
     is_audio = ext in (".mp3", ".wav")
 
@@ -80,25 +96,18 @@ async def import_asset(
         if is_video:
             processed = preprocess_video(str(target_path))
             if processed != str(target_path):
-                # Replace with preprocessed file
-                new_path = processed
-                media_info = detect_media(new_path)
-                log(f"[Asset] Video preprocessed: {target_path.name} → {Path(new_path).name}")
+                media_info = detect_media(processed)
         elif is_audio:
             processed = preprocess_audio(str(target_path))
             if processed != str(target_path):
-                new_path = processed
-                media_info = detect_media(new_path)
-                log(f"[Asset] Audio preprocessed: {target_path.name} → {Path(new_path).name}")
-    except Exception as e:
-        log(f"[Asset] Preprocess warning: {e}")
+                media_info = detect_media(processed)
+    except Exception:
+        pass
 
-    # Save to DB
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        """INSERT INTO assets (name, type, path, tags, duration, width, height)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        "INSERT INTO assets (name, type, path, tags, duration, width, height) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (name, asset_type, str(target_path), tags,
          media_info.get("duration", 0),
          media_info.get("width", 0),
@@ -125,7 +134,6 @@ async def import_asset(
 
 @router.get("")
 async def list_assets(type: Optional[str] = None):
-    """List all assets, optionally filtered by type."""
     conn = get_db_connection()
     cursor = conn.cursor()
     if type:
@@ -139,7 +147,6 @@ async def list_assets(type: Optional[str] = None):
 
 @router.get("/{asset_id}")
 async def get_asset(asset_id: int):
-    """Get single asset with full media info."""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM assets WHERE id = ?", (asset_id,))
@@ -148,7 +155,6 @@ async def get_asset(asset_id: int):
     if not row:
         raise HTTPException(status_code=404, detail="素材不存在")
     info = dict(row)
-    # Enrich with fresh ffprobe data
     path = info.get("path", "")
     if path and os.path.exists(path):
         media = detect_media(path)
@@ -162,7 +168,6 @@ async def get_asset(asset_id: int):
 
 @router.delete("/{asset_id}")
 async def delete_asset(asset_id: int):
-    """Delete an asset and its file."""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT path FROM assets WHERE id = ?", (asset_id,))

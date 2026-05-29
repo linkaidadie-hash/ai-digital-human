@@ -1,7 +1,6 @@
 <template>
   <div class="asset-card" :class="{ selected: isSelected }" @click="$emit('select', asset)">
     <div class="thumbnail" @click.stop="$emit('preview', asset)">
-      <!-- Video: use first frame poster -->
       <video
         v-if="isVideo"
         :src="assetUrl"
@@ -10,27 +9,23 @@
         @mouseenter="$event.target.play()"
         @mouseleave="$event.target.pause(); $event.target.currentTime = 0"
       />
-      <!-- Image: show thumbnail -->
       <img v-else-if="isImage" :src="assetUrl" :alt="asset.name" />
-      <!-- Audio: show waveform placeholder -->
       <div v-else-if="isAudio" class="audio-thumb">
         <span class="audio-icon">🎵</span>
         <span class="audio-name">{{ asset.name }}</span>
       </div>
-      <!-- Generic fallback -->
       <div v-else class="placeholder">
-        <span class="type-icon">{{ getTypeIcon() }}</span>
+        <span class="type-icon">{{ typeIcon }}</span>
       </div>
       <div class="overlay">
         <span>{{ isVideo ? '播放' : isImage ? '预览' : '试听' }}</span>
       </div>
-      <!-- Select badge -->
       <div v-if="isSelected" class="select-badge">✓</div>
     </div>
     <div class="info">
       <h4 class="name" :title="asset.name">{{ asset.name }}</h4>
       <div class="meta">
-        <span class="type-badge">{{ getTypeLabel() }}</span>
+        <span class="type-badge">{{ typeLabel }}</span>
         <span v-if="asset.duration" class="duration">{{ formatDuration(asset.duration) }}</span>
         <span v-if="asset.width && asset.height" class="resolution">{{ asset.width }}×{{ asset.height }}</span>
       </div>
@@ -53,38 +48,42 @@ const props = defineProps<{
   isSelected?: boolean;
 }>();
 
-const emit = defineEmits<{
+defineEmits<{
   (e: 'delete', asset: Asset): void;
   (e: 'preview', asset: Asset): void;
   (e: 'select', asset: Asset): void;
 }>();
 
-const isVideo = computed(() => ['character_video', 'action_video', 'background_video'].includes(props.asset.type));
-const isImage = computed(() => ['background_image', 'product_image'].includes(props.asset.type));
-const isAudio = computed(() => ['bgm', 'sound_effect'].includes(props.asset.type));
+const isVideo = computed(() =>
+  ['character_video', 'action_video', 'background_video'].includes(props.asset.type)
+);
+const isImage = computed(() =>
+  ['image', 'background_image', 'product_image', 'character_image'].includes(props.asset.type)
+);
+const isAudio = computed(() =>
+  ['bgm', 'sound_effect'].includes(props.asset.type)
+);
 
 const assetUrl = computed(() => props.asset.path ? `file://${props.asset.path}` : '');
-const posterUrl = computed(() => '');  // Could generate thumbnail if needed
+const posterUrl = computed(() => '');
 
-function getTypeIcon(): string {
-  const icons: Record<string, string> = {
-    character_video: '🎬', action_video: '🎭',
-    background_image: '🖼', background_video: '🎥',
-    product_image: '📦', product_video: '🎁',
-    bgm: '🎵', sound_effect: '🔊', font: '🔤'
-  };
-  return icons[props.asset.type] || '📁';
-}
+const typeIcon = computed(() => ({
+  character_video: '🎬', character_image: '🖼️',
+  action_video: '🎭',
+  background_image: '🖼️', background_video: '🎥',
+  product_image: '📦', product_video: '🎁',
+  bgm: '🎵', sound_effect: '🔊', font: '🔤',
+  image: '🖼️'
+}[props.asset.type] || '📁'));
 
-function getTypeLabel(): string {
-  const labels: Record<string, string> = {
-    character_video: '角色视频', action_video: '动作视频',
-    background_image: '背景图', background_video: '背景视频',
-    product_image: '商品图', product_video: '商品视频',
-    bgm: 'BGM', sound_effect: '音效', font: '字体'
-  };
-  return labels[props.asset.type] || props.asset.type;
-}
+const typeLabel = computed(() => ({
+  character_video: '角色视频', character_image: '角色图片',
+  action_video: '动作视频',
+  background_image: '背景图', background_video: '背景视频',
+  product_image: '商品图', product_video: '商品图',
+  bgm: 'BGM', sound_effect: '音效', font: '字体',
+  image: '图片'
+}[props.asset.type] || props.asset.type));
 
 function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);

@@ -14,14 +14,20 @@
       <p class="template-hint" v-if="selectedTemplateId">已加载模板配置，可在此基础上修改</p>
     </div>
 
+    <!-- 模式切换：视频角色 / 图片角色 -->
+    <div class="mode-tabs">
+      <button :class="{ active: genMode === 'video' }" @click="genMode = 'video'">🎬 视频角色</button>
+      <button :class="{ active: genMode === 'image' }" @click="genMode = 'image'">🖼️ 图片角色</button>
+    </div>
+
     <div class="generate-form">
 
       <!-- 素材选择区 -->
       <div class="form-section">
         <h3>1. 选择素材</h3>
 
-        <!-- 主视频 -->
-        <div class="asset-row">
+        <!-- 主视频 (视频模式) -->
+        <div class="asset-row" v-if="genMode === 'video'">
           <label>主视频：</label>
           <select v-model.number="mainVideoId" @change="onMainVideoChange">
             <option :value="0">不选</option>
@@ -31,6 +37,20 @@
           </select>
           <span v-if="mainVideoId && selectedMainVideo" class="asset-spec">
             {{ selectedMainVideo.width }}×{{ selectedMainVideo.height }} · {{ formatDur(selectedMainVideo.duration) }} · {{ selectedMainVideo.codec || '' }}
+          </span>
+        </div>
+
+        <!-- 角色图片 (图片模式) -->
+        <div class="asset-row" v-if="genMode === 'image'">
+          <label>角色图片：</label>
+          <select v-model.number="characterImageId">
+            <option :value="0">请选择</option>
+            <option v-for="ci in characterImages" :key="ci.id" :value="ci.id">
+              {{ ci.name }} {{ ci.width ? `(${ci.width}×${ci.height})` : '' }}
+            </option>
+          </select>
+          <span v-if="characterImageId && selectedCharImage" class="asset-spec">
+            {{ selectedCharImage.width }}×{{ selectedCharImage.height }}
           </span>
         </div>
 
@@ -177,7 +197,7 @@
       </div>
 
       <button class="btn-generate" @click="startGenerate"
-        :disabled="!script || generating || (!mainVideoId && !backgroundId)">
+        :disabled="!script || generating || ((genMode === 'video' ? !mainVideoId : !characterImageId) && !backgroundId)">
         {{ generating ? '生成中...' : '🚀 开始生成' }}
       </button>
     </div>
@@ -230,7 +250,10 @@ import ProgressBar from '@/components/ProgressBar.vue';
 
 const route = useRoute();
 
+const genMode = ref<'video' | 'image'>('video');
+
 const mainVideos = ref<Asset[]>([]);
+const characterImages = ref<Asset[]>([]);
 const backgrounds = ref<Asset[]>([]);
 const products = ref<Asset[]>([]);
 const bgms = ref<Asset[]>([]);
@@ -243,6 +266,7 @@ const selectedTemplateId = ref(0);
 
 // Form state
 const mainVideoId = ref(0);
+const characterImageId = ref(0);
 const backgroundId = ref(0);
 const productId = ref(0);
 const bgmId = ref(0);
@@ -282,6 +306,7 @@ const errorMessage = ref('');
 const pollInterval = ref<number | null>(null);
 
 const selectedMainVideo = computed(() => mainVideos.value.find(v => v.id === mainVideoId.value));
+const selectedCharImage = computed(() => characterImages.value.find(c => c.id === characterImageId.value));
 const videoUrl = computed(() => outputPath.value ? `file://${outputPath.value}` : '');
 const completed = computed(() => projectStatus.value === 'completed');
 
@@ -357,14 +382,16 @@ function onMainVideoChange() {
 
 async function loadAllAssets() {
   try {
-    const [av, ab, ap, abgm, tdata] = await Promise.all([
+    const [av, ac, ab, ap, abgm, tdata] = await Promise.all([
       getAssets({ type: 'character_video', pageSize: 100 }),
+      getAssets({ type: 'character_image', pageSize: 100 }),
       getAssets({ type: 'background', pageSize: 100 }),
       getAssets({ type: 'product', pageSize: 100 }),
       getAssets({ type: 'bgm', pageSize: 100 }),
       getTemplates(),
     ]);
     mainVideos.value = av.assets;
+    characterImages.value = ac.assets;
     backgrounds.value = ab.assets;
     products.value = ap.assets;
     bgms.value = abgm.assets;
@@ -403,10 +430,11 @@ async function startGenerate() {
       templateId: selectedTemplateId.value || null,
       script: script.value,
       voice: selectedVoice.value,
-      mainVideoAssetId: mainVideoId.value || null,
+      mainVideoAssetId: genMode.value === 'video' ? (mainVideoId.value || null) : null,
       backgroundAssetId: backgroundId.value || null,
       productAssetId: productId.value || null,
       bgmAssetId: bgmId.value || null,
+      characterImageAssetId: genMode.value === 'image' ? (characterImageId.value || null) : null,
       subtitleFontSize: subtitleFontSize.value,
       subtitlePosition: subtitlePosition.value,
       subtitleStroke: subtitleStroke.value,
@@ -484,6 +512,11 @@ onUnmounted(() => { stopPolling(); });
 </script>
 
 <style scoped>
+/* Mode tabs */
+.mode-tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+.mode-tabs button { flex: 1; padding: 12px; border: 2px solid #c5cae9; background: white; border-radius: 8px; font-size: 15px; cursor: pointer; transition: all 0.2s; color: #666; }
+.mode-tabs button.active { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-color: #764ba2; font-weight: 500; }
+
 .generate-view { padding: 24px; max-width: 900px; margin: 0 auto; }
 h2 { font-size: 24px; color: #1a1a2e; margin-bottom: 24px; }
 .generate-form { background: white; padding: 24px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 24px; }

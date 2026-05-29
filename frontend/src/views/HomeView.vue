@@ -48,6 +48,45 @@
       <p>⚠️ 还没有素材，请先 <router-link to="/assets">导入素材</router-link></p>
     </div>
 
+    <!-- 新手引导 -->
+    <div class="guide-section" v-if="showGuide">
+      <h3>🚀 快速上手</h3>
+      <div class="guide-cards">
+        <div class="guide-card" @click="$router.push('/assets')">
+          <div class="guide-icon">📁</div>
+          <div class="guide-text">
+            <h4>Step 1 — 导入素材</h4>
+            <p>上传你的角色视频或角色图片</p>
+          </div>
+          <div class="guide-arrow">→</div>
+        </div>
+        <div class="guide-card" @click="$router.push('/generate')">
+          <div class="guide-icon">🖼️</div>
+          <div class="guide-text">
+            <h4>Step 2 — 图片角色模式</h4>
+            <p>上传一张照片作为数字人，支持文案+语音驱动</p>
+          </div>
+          <div class="guide-arrow">→</div>
+        </div>
+        <div class="guide-card" @click="$router.push('/generate')">
+          <div class="guide-icon">🎬</div>
+          <div class="guide-text">
+            <h4>Step 3 — 视频角色模式</h4>
+            <p>用真实视频作为数字人口播，导入背景+文案即可</p>
+          </div>
+          <div class="guide-arrow">→</div>
+        </div>
+        <div class="guide-card" @click="$router.push('/templates')">
+          <div class="guide-icon">📋</div>
+          <div class="guide-text">
+            <h4>Step 4 — 保存模板</h4>
+            <p>配置好后保存为模板，下次一键生成</p>
+          </div>
+          <div class="guide-arrow">→</div>
+        </div>
+      </div>
+    </div>
+
     <div class="menu-grid">
       <div class="menu-card primary" @click="$router.push('/generate')">
         <div class="icon">+</div>
@@ -111,6 +150,7 @@ const templateCount = ref(0);
 const projectCount = ref(0);
 
 const hasAssets = computed(() => assetCount.value > 0);
+const showGuide = computed(() => templateCount.value === 0 && projectCount.value === 0);
 
 const quickStatusText = computed(() => {
   const p = quickProject.value;
@@ -228,6 +268,16 @@ onUnmounted(stopQuickPoll);
 
 .empty-tip { text-align: center; padding: 20px; background: #fff3cd; border-radius: 8px; margin-bottom: 32px; color: #856404; font-size: 15px; }
 .empty-tip a { color: #667eea; text-decoration: none; }
+
+.guide-section { background: white; border-radius: 16px; padding: 28px; margin-bottom: 32px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+.guide-section h3 { font-size: 18px; color: #333; margin-bottom: 20px; border-left: 4px solid #667eea; padding-left: 10px; }
+.guide-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.guide-card { display: flex; align-items: center; gap: 14px; padding: 16px; background: #f8f9ff; border-radius: 10px; cursor: pointer; transition: background 0.2s, transform 0.15s; }
+.guide-card:hover { background: #eef0ff; transform: translateX(2px); }
+.guide-icon { font-size: 28px; flex-shrink: 0; }
+.guide-text h4 { font-size: 14px; color: #333; margin-bottom: 4px; }
+.guide-text p { font-size: 12px; color: #888; margin: 0; }
+.guide-arrow { margin-left: auto; font-size: 18px; color: #667eea; }
 
 .menu-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 40px; }
 .menu-card { background: white; border-radius: 16px; padding: 32px 20px; text-align: center; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }

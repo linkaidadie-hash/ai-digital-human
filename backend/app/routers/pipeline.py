@@ -26,6 +26,7 @@ class PipelineRequest(BaseModel):
     background_asset_id: Optional[int] = None
     product_asset_id: Optional[int] = None
     bgm_asset_id: Optional[int] = None
+    character_image_asset_id: Optional[int] = None
     main_video_scale: float = 0.4
     product_scale: float = 0.25
     product_position: str = "bottom-right"
@@ -103,6 +104,7 @@ def run_pipeline_bg(
     background_asset_id: int,
     product_asset_id: int,
     bgm_asset_id: int,
+    character_image_asset_id: int,
     main_video_scale: float,
     product_scale: float,
     product_position: str,
@@ -147,9 +149,10 @@ def run_pipeline_bg(
         background_path = _get_asset_path(background_asset_id)
         product_path = _get_asset_path(product_asset_id)
         bgm_path = _get_asset_path(bgm_asset_id)
+        character_image_path = _get_asset_path(character_image_asset_id)
 
         log(f"[Pipeline] Assets — main={main_video_path}, bg={background_path}, "
-            f"product={product_path}, bgm={bgm_path}")
+            f"product={product_path}, bgm={bgm_path}, char_img={character_image_path}")
 
         # ── 4. Render ────────────────────────────────────────────────────────
         update_project(project_id, status="processing", progress=50)
@@ -171,6 +174,7 @@ def run_pipeline_bg(
             subtitle_font_size=subtitle_font_size if subtitle_font_size else 48,
             subtitle_position=subtitle_position or "bottom",
             subtitle_stroke=subtitle_stroke if subtitle_stroke else 2,
+            character_image_path=character_image_path,
             output_width=output_width or 1080,
             output_height=output_height or 1920,
             timeout=180,
@@ -216,6 +220,7 @@ async def run_pipeline(
     bg_id = body.background_asset_id if body.background_asset_id else tmpl.get("background_asset_id")
     prod_id = body.product_asset_id if body.product_asset_id else tmpl.get("product_asset_id")
     bgm_id = body.bgm_asset_id if body.bgm_asset_id else tmpl.get("bgm_asset_id")
+    char_img_id = body.character_image_asset_id if body.character_image_asset_id else tmpl.get("character_image_asset_id")
 
     # Layout
     layout = tmpl.get("layout_json") or {}
@@ -270,6 +275,7 @@ async def run_pipeline(
         str(bg_id if bg_id else 0),
         str(prod_id if prod_id else 0),
         str(bgm_id if bgm_id else "None"),
+        str(char_img_id if char_img_id else "None"),
         str(mv_scale),
         str(prod_scale),
         prod_pos,
